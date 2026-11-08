@@ -79,7 +79,7 @@ class _SharedPrintScreenState extends State<SharedPrintScreen> {
         }
         final lower = path.toLowerCase();
         final ticket = await Ticket.create(paper);
-        ticket.textRaster(_name(path),
+        await ticket.textRaster(_name(path),
             textDirection: TextDirection.rtl, align: PrintAlign.center);
         ticket.separator();
 
