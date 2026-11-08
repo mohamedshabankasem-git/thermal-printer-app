@@ -1,0 +1,7 @@
+-keep class io.flutter.** { *; }
+-keep class io.flutter.plugins.** { *; }
+-keep class com.felhr.usbserial.** { *; }
+-keep class com.lib.flutter_blue_plus.** { *; }
+-keep class com.google.android.material.** { *; }
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
