@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:file_share_intent/file_share_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
