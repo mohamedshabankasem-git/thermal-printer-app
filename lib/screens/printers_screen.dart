@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:unified_esc_pos_printer/unified_esc_pos_printer.dart';
 
 class PrintersScreen extends StatefulWidget {
   const PrintersScreen({super.key, required this.preferences});
@@ -15,125 +13,86 @@ class PrintersScreen extends StatefulWidget {
 }
 
 class _PrintersScreenState extends State<PrintersScreen> {
-  final List<ScanResult> _results = [];
-  StreamSubscription<List<ScanResult>>? _scanSubscription;
+  final PrinterManager _manager = PrinterManager();
+  List<PrinterDevice> _devices = [];
   bool _scanning = false;
   String? _busyDevice;
 
   @override
-  void initState() {
-    super.initState();
-    _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
-      if (!mounted) return;
-      setState(() {
-        _results
-          ..clear()
-          ..addAll(results);
-      });
-    });
+  void dispose() {
+    unawaited(_manager.dispose());
+    super.dispose();
   }
 
-  Future<bool> _requestPermissions() async {
-    final permissions = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
-    return permissions.values.every((status) => status.isGranted || status.isLimited);
+  String _detail(PrinterDevice device) {
+    if (device is BlePrinterDevice) return 'BLE • ${device.deviceId}';
+    if (device is BluetoothPrinterDevice) return 'Bluetooth Classic • ${device.address}';
+    if (device is UsbPrinterDevice) return 'USB • ${device.identifier}';
+    if (device is NetworkPrinterDevice) return 'شبكة • ${device.host}:${device.port}';
+    return device.connectionType.name;
+  }
+
+  String _stableId(PrinterDevice device) {
+    if (device is BlePrinterDevice) return device.deviceId;
+    if (device is BluetoothPrinterDevice) return device.address;
+    if (device is UsbPrinterDevice) return device.identifier;
+    if (device is NetworkPrinterDevice) return '${device.host}:${device.port}';
+    return device.name;
   }
 
   Future<void> _scan() async {
-    if (!await _requestPermissions()) {
-      _message('يرجى السماح بصلاحيات Bluetooth والموقع للبحث عن الأجهزة');
-      return;
-    }
+    setState(() {
+      _scanning = true;
+      _devices = [];
+    });
     try {
-      if (!await FlutterBluePlus.isSupported) {
-        _message('هذا الجهاز لا يدعم Bluetooth LE');
-        return;
-      }
-      if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
-        _message('شغّل Bluetooth ثم حاول مرة أخرى');
-        return;
-      }
-      setState(() {
-        _results.clear();
-        _scanning = true;
-      });
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 12));
-      await Future<void>.delayed(const Duration(seconds: 12));
+      final found = await _manager.scanPrinters(
+        timeout: const Duration(seconds: 10),
+      );
+      if (!mounted) return;
+      setState(() => _devices = found);
+      if (found.isEmpty) _message('لم يتم العثور على طابعات. تأكد من تشغيل الطابعة ومنح صلاحيات البلوتوث.');
     } catch (error) {
-      _message('تعذر البحث: $error');
+      _message('تعذر البحث عن الطابعات: $error');
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
   }
 
-  Future<void> _select(ScanResult result) async {
-    final device = result.device;
-    final name = device.platformName.isEmpty ? device.remoteId.str : device.platformName;
-    await widget.preferences.setString('saved_printer_id', device.remoteId.str);
-    await widget.preferences.setString('saved_printer_name', name);
+  Future<void> _select(PrinterDevice device) async {
+    await widget.preferences.setString('saved_printer_id', _stableId(device));
+    await widget.preferences.setString('saved_printer_name', device.name);
+    await widget.preferences.setString('saved_printer_type', device.connectionType.name);
     if (!mounted) return;
-    _message('تم حفظ $name كطابعة مفضلة');
+    _message('تم حفظ الطابعة ${device.name}');
     Navigator.pop(context);
   }
 
-  Future<void> _connectAndTest(ScanResult result) async {
-    final device = result.device;
-    setState(() => _busyDevice = device.remoteId.str);
+  Future<void> _connectAndTest(PrinterDevice device) async {
+    final id = _stableId(device);
+    setState(() => _busyDevice = id);
     try {
-      if (!await _requestPermissions()) {
-        _message('يلزم السماح بصلاحية الاتصال بالبلوتوث');
-        return;
-      }
-      await device.connect(timeout: const Duration(seconds: 15), autoConnect: false);
-      final services = await device.discoverServices();
-      BluetoothCharacteristic? writable;
-      for (final service in services) {
-        for (final characteristic in service.characteristics) {
-          if (characteristic.properties.write ||
-              characteristic.properties.writeWithoutResponse) {
-            writable = characteristic;
-            break;
-          }
-        }
-        if (writable != null) break;
-      }
-      if (writable == null) {
-        _message('تم الاتصال، لكن لم أجد منفذ كتابة متوافقًا. قد تكون الطابعة Bluetooth Classic وليست BLE.');
-        return;
-      }
-
-      final name = device.platformName.isEmpty ? device.remoteId.str : device.platformName;
-      await widget.preferences.setString('saved_printer_id', device.remoteId.str);
-      await widget.preferences.setString('saved_printer_name', name);
-
-      final bytes = <int>[
-        0x1B, 0x40, // ESC @ initialize
-        ...ascii.encode('PrintEasy\n'),
-        ...ascii.encode('Bluetooth test print\n'),
-        ...ascii.encode('------------------------------\n'),
-        0x0A, 0x0A, 0x0A,
-      ];
-      final withoutResponse = writable.properties.writeWithoutResponse &&
-          !writable.properties.write;
-      const chunkSize = 180;
-      for (var offset = 0; offset < bytes.length; offset += chunkSize) {
-        final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
-        await writable.write(
-          bytes.sublist(offset, end),
-          withoutResponse: withoutResponse,
-          timeout: 10,
-        );
-      }
-      _message('تم إرسال اختبار الطباعة إلى $name');
+      await _manager.connect(device);
+      final width = widget.preferences.getString('paper_width') ?? '80';
+      final paper = width == '58' ? PaperSize.mm58 : PaperSize.mm80;
+      final ticket = await Ticket.create(paper);
+      ticket.text('PrintEasy', align: PrintAlign.center,
+          style: const PrintTextStyle(bold: true, height: TextSize.size2, width: TextSize.size2));
+      ticket.separator(char: '=');
+      await ticket.textRaster('اختبار الطباعة العربية', textDirection: TextDirection.rtl, align: PrintAlign.center);
+      await ticket.textRaster('تم الاتصال بالطابعة بنجاح', textDirection: TextDirection.rtl, align: PrintAlign.center);
+      ticket.emptyLines(3);
+      ticket.cut();
+      await _manager.printTicket(ticket);
+      await _manager.disconnect();
+      await _select(device);
+      _message('تم إرسال صفحة الاختبار إلى ${device.name}');
     } catch (error) {
+      try {
+        await _manager.disconnect();
+      } catch (_) {}
       _message('تعذر الاتصال أو الطباعة: $error');
     } finally {
-      try {
-        await device.disconnect();
-      } catch (_) {}
       if (mounted) setState(() => _busyDevice = null);
     }
   }
@@ -145,11 +104,12 @@ class _PrintersScreenState extends State<PrintersScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _scanSubscription?.cancel();
-    FlutterBluePlus.stopScan();
-    super.dispose();
+  IconData _icon(PrinterDevice device) {
+    if (device is BlePrinterDevice) return Icons.bluetooth;
+    if (device is BluetoothPrinterDevice) return Icons.bluetooth_audio;
+    if (device is UsbPrinterDevice) return Icons.usb;
+    if (device is NetworkPrinterDevice) return Icons.wifi;
+    return Icons.print;
   }
 
   @override
@@ -161,19 +121,19 @@ class _PrintersScreenState extends State<PrintersScreen> {
         icon: Icon(_scanning ? Icons.hourglass_top : Icons.bluetooth_searching),
         label: Text(_scanning ? 'جارٍ البحث...' : 'بحث عن الطابعات'),
       ),
-      body: _results.isEmpty
+      body: _devices.isEmpty
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(28),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.bluetooth, size: 64, color: Colors.blueGrey),
+                    const Icon(Icons.print, size: 64, color: Colors.blueGrey),
                     const SizedBox(height: 14),
-                    Text(_scanning ? 'جارٍ البحث عن الأجهزة القريبة' : 'اضغط على بحث لاكتشاف الطابعات BLE',
+                    Text(_scanning ? 'جارٍ البحث عن الطابعات القريبة' : 'ابحث لاكتشاف الطابعات المتاحة',
                         textAlign: TextAlign.center),
                     const SizedBox(height: 8),
-                    const Text('ملاحظة: بعض الطابعات الحرارية تعمل عبر Bluetooth Classic ولا تظهر في بحث BLE.',
+                    const Text('يدعم التطبيق BLE وBluetooth Classic وUSB والشبكة حسب نوع الطابعة.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.black54, fontSize: 12)),
                   ],
@@ -182,24 +142,20 @@ class _PrintersScreenState extends State<PrintersScreen> {
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-              itemCount: _results.length,
+              itemCount: _devices.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
-                final result = _results[index];
-                final device = result.device;
-                final name = device.platformName.isEmpty ? 'جهاز غير معروف' : device.platformName;
-                final busy = _busyDevice == device.remoteId.str;
+                final device = _devices[index];
+                final busy = _busyDevice == _stableId(device);
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     child: Column(
                       children: [
                         ListTile(
-                          leading: const CircleAvatar(child: Icon(Icons.print)),
-                          title: Text(name),
-                          subtitle: Text(device.remoteId.str),
-                          trailing: Text('${result.rssi} dBm',
-                              style: const TextStyle(color: Colors.black54)),
+                          leading: CircleAvatar(child: Icon(_icon(device))),
+                          title: Text(device.name.isEmpty ? 'طابعة بدون اسم' : device.name),
+                          subtitle: Text(_detail(device)),
                         ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -207,14 +163,14 @@ class _PrintersScreenState extends State<PrintersScreen> {
                             children: [
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: busy ? null : () => _select(result),
+                                  onPressed: busy ? null : () => _select(device),
                                   child: const Text('حفظ الطابعة'),
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: FilledButton.icon(
-                                  onPressed: busy ? null : () => _connectAndTest(result),
+                                  onPressed: busy ? null : () => _connectAndTest(device),
                                   icon: Icon(busy ? Icons.hourglass_top : Icons.print),
                                   label: Text(busy ? 'جارٍ الاتصال' : 'اختبار الطباعة'),
                                 ),
