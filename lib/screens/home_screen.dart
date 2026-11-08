@@ -23,15 +23,15 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _shareSubscription = ReceiveSharingIntent.instance.getMediaStream().listen(
+    _shareSubscription = FileShareIntent.instance.getMediaStream().listen(
       _handleSharedMedia,
       onError: (Object error) {
         if (mounted) _showShareMessage('تعذر استقبال الملف: $error');
       },
     );
-    ReceiveSharingIntent.instance.getInitialMedia().then((media) {
+    FileShareIntent.instance.getInitialMedia().then((media) {
       if (media.isNotEmpty) _handleSharedMedia(media);
-      ReceiveSharingIntent.instance.reset();
+      FileShareIntent.instance.reset();
     }).catchError((Object error) {
       if (mounted) _showShareMessage('تعذر قراءة المشاركة: $error');
     });
