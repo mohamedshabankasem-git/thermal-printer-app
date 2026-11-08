@@ -56,7 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: ListTile(
               leading: Icon(Icons.bluetooth),
               title: Text('نوع الاتصال'),
-              subtitle: Text('Bluetooth LE — دعم Bluetooth Classic قادم'),
+              subtitle: Text('BLE وBluetooth Classic وUSB والشبكة (حسب الطابعة)'),
             ),
           ),
           const Card(
