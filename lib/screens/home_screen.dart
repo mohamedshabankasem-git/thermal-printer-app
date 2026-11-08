@@ -29,12 +29,17 @@ class _HomeScreenState extends State<HomeScreen> {
         if (mounted) _showShareMessage('تعذر استقبال الملف: $error');
       },
     );
-    FileShareIntent.instance.getInitialMedia().then((media) {
+    _loadInitialSharedMedia();
+  }
+
+  Future<void> _loadInitialSharedMedia() async {
+    try {
+      final media = await FileShareIntent.instance.getInitialMedia();
       if (media.isNotEmpty) _handleSharedMedia(media);
       FileShareIntent.instance.reset();
-    }).catchError((Object error) {
+    } catch (error) {
       if (mounted) _showShareMessage('تعذر قراءة المشاركة: $error');
-    });
+    }
   }
 
   void _handleSharedMedia(List<SharedMediaFile> media) {
