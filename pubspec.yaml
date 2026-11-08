@@ -10,9 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_blue_plus: ^1.36.8
-  permission_handler: ^11.3.1
   shared_preferences: ^2.3.2
+  unified_esc_pos_printer: ^3.4.0
   file_share_intent: ^2.0.4
 
 dev_dependencies:
