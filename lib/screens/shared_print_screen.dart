@@ -87,7 +87,7 @@ class _SharedPrintScreenState extends State<SharedPrintScreen> {
           final document = await PdfDocument.openFile(path);
           try {
             for (var pageNumber = 1;
-                pageNumber <= document.pageCount;
+                pageNumber <= document.pagesCount;
                 pageNumber++) {
               final page = await document.getPage(pageNumber);
               try {
