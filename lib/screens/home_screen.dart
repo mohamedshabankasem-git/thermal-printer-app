@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_share_intent/file_share_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'printers_screen.dart';
@@ -16,6 +17,78 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String get savedPrinter =>
       widget.preferences.getString('saved_printer_name') ?? 'لم يتم اختيار طابعة';
+
+  StreamSubscription<List<SharedMediaFile>>? _shareSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _shareSubscription = ReceiveSharingIntent.instance.getMediaStream().listen(
+      _handleSharedMedia,
+      onError: (Object error) {
+        if (mounted) _showShareMessage('تعذر استقبال الملف: $error');
+      },
+    );
+    ReceiveSharingIntent.instance.getInitialMedia().then((media) {
+      if (media.isNotEmpty) _handleSharedMedia(media);
+      ReceiveSharingIntent.instance.reset();
+    }).catchError((Object error) {
+      if (mounted) _showShareMessage('تعذر قراءة المشاركة: $error');
+    });
+  }
+
+  void _handleSharedMedia(List<SharedMediaFile> media) {
+    if (!mounted || media.isEmpty) return;
+    final paths = media.map((item) => item.path).toList(growable: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('محتوى مستلم للمشاركة'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: paths
+                  .map((path) => ListTile(
+                        leading: const Icon(Icons.insert_drive_file),
+                        title: Text(path.split('/').last,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(path,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                      ))
+                  .toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إغلاق'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _showShareMessage('تم استلام ${paths.length} ملف. سيتم ربطه بمحرك الطباعة في المرحلة التالية.');
+              },
+              child: const Text('متابعة'),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  void _showShareMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  void dispose() {
+    _shareSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
