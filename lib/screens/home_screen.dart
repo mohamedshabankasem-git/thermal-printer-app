@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'printers_screen.dart';
 import 'settings_screen.dart';
+import 'shared_print_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.preferences});
@@ -46,41 +47,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _handleSharedMedia(List<SharedMediaFile> media) {
     if (!mounted || media.isEmpty) return;
-    final paths = media.map((item) => item.path).toList(growable: false);
+    final paths = media
+        .map((item) => item.path)
+        .where((path) => path.trim().isNotEmpty)
+        .toList(growable: false);
+    if (paths.isEmpty) {
+      _showShareMessage('لم يتم العثور على مسار صالح للملف المشارك');
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('محتوى مستلم للمشاركة'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: paths
-                  .map((path) => ListTile(
-                        leading: const Icon(Icons.insert_drive_file),
-                        title: Text(path.split('/').last,
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
-                        subtitle: Text(path,
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
-                      ))
-                  .toList(),
-            ),
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SharedPrintScreen(
+            paths: paths,
+            preferences: widget.preferences,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إغلاق'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                _showShareMessage('تم استلام ${paths.length} ملف. سيتم ربطه بمحرك الطباعة في المرحلة التالية.');
-              },
-              child: const Text('متابعة'),
-            ),
-          ],
         ),
       );
     });
