@@ -29,13 +29,6 @@ class PrintEasyApp extends StatelessWidget {
           backgroundColor: Colors.white,
           foregroundColor: Color(0xFF17212B),
         ),
-        cardTheme: CardThemeData(
-          color: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-        ),
       ),
       home: HomeScreen(preferences: preferences),
     );
