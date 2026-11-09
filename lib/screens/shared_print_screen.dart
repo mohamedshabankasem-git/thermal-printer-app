@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
-import 'package:pdf_render_maintained/pdf_render.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:unified_esc_pos_printer/unified_esc_pos_printer.dart';
 
@@ -84,33 +83,7 @@ class _SharedPrintScreenState extends State<SharedPrintScreen> {
         ticket.separator();
 
         if (lower.endsWith('.pdf')) {
-          final document = await PdfDocument.openFile(path);
-          try {
-            for (var pageNumber = 1;
-                pageNumber <= document.pagesCount;
-                pageNumber++) {
-              final page = await document.getPage(pageNumber);
-              try {
-                final pageWidth = maxWidth;
-                final pageHeight =
-                    (page.height * pageWidth / page.width).round().clamp(1, 12000);
-                final rendered = await page.render(
-                  width: pageWidth,
-                  height: pageHeight,
-                );
-                final decoded = img.decodeImage(rendered.bytes);
-                if (decoded == null) {
-                  throw Exception('تعذر تحويل صفحة $pageNumber من ملف PDF');
-                }
-                ticket.imageRaster(decoded,
-                    align: PrintAlign.center, maxWidth: maxWidth);
-              } finally {
-                await page.close();
-              }
-            }
-          } finally {
-            await document.close();
-          }
+          throw Exception('طباعة ملفات PDF غير متاحة مؤقتاً لحين اعتماد مكتبة متوافقة؛ يمكنك تحويل الملف إلى صورة ثم مشاركته للطباعة.');
         } else if (lower.endsWith('.png') ||
             lower.endsWith('.jpg') ||
             lower.endsWith('.jpeg') ||
